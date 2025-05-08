@@ -68,16 +68,49 @@ export function modifyObjcAppDelegate(contents: string): string {
   }
 }
 
+// Add this new function to handle Swift AppDelegates
+export function modifySwiftAppDelegate(contents: string): string {
+  // Check if the code is already added
+  if (contents.includes('RNFBAppCheckModule.sharedInstance()')) {
+    return contents;
+  }
+
+  // Find the appropriate location in Swift AppDelegate
+  const didFinishLaunchingPattern =
+    /func\s+application\s*\(\s*.*?didFinishLaunchingWithOptions.*?\)\s*->\s*Bool\s*\{/g;
+
+  if (!didFinishLaunchingPattern.test(contents)) {
+    WarningAggregator.addWarningIOS(
+      '@react-native-firebase/app-check',
+      'Unable to find didFinishLaunchingWithOptions method in Swift AppDelegate. Skipping Firebase App Check initialization.',
+    );
+    return contents;
+  }
+
+  // Add the Swift code equivalent to initialize App Check
+  return mergeContents({
+    tag: '@react-native-firebase/app-check-swift',
+    src: contents,
+    newSrc: '_ = RNFBAppCheckModule.sharedInstance()',
+    anchor: didFinishLaunchingPattern,
+    offset: 1, // Add it after the opening brace
+    comment: '//',
+  }).contents;
+}
+
 export async function modifyAppDelegateAsync(appDelegateFileInfo: AppDelegateProjectFile) {
   const { language, path, contents } = appDelegateFileInfo;
 
+  let newContents;
   if (['objc', 'objcpp'].includes(language)) {
-    const newContents = modifyObjcAppDelegate(contents);
-    await fs.promises.writeFile(path, newContents);
+    newContents = modifyObjcAppDelegate(contents);
+  } else if (language === 'swift') {
+    newContents = modifySwiftAppDelegate(contents);
   } else {
-    // TODO: Support Swift
     throw new Error(`Cannot add Firebase code to AppDelegate of language "${language}"`);
   }
+
+  await fs.promises.writeFile(path, newContents);
 }
 
 export const withFirebaseAppDelegate: ConfigPlugin = config => {
